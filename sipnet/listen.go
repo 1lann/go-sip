@@ -10,8 +10,7 @@ var (
 	// ErrClosed is returned if AcceptRequest is called on a closed listener.
 	// io.EOF may also be returned on a closed underlying connection, in which
 	// the connection itself will also be returned.
-	ErrClosed        = errors.New("sip: closed")
-	ErrInvalidBranch = errors.New("sip: invalid branch")
+	ErrClosed = errors.New("sip: closed")
 )
 
 type requestPackage struct {

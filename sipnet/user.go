@@ -55,8 +55,8 @@ func ParseUser(str string) (User, error) {
 	}, nil
 }
 
-// ParseHeader returns the users from the To, and the From fields respectively
-// from the header.
+// ParseUserHeader returns the parsed users from the From, and the To fields
+// respectively from the header.
 func ParseUserHeader(h Header) (User, User, error) {
 	var from User
 	to, err := ParseUser(h.Get("To"))

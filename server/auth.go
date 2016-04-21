@@ -25,7 +25,9 @@ type authSession struct {
 var authSessions = make(map[string]authSession)
 var authSessionMutex = new(sync.Mutex)
 
-var ErrInvalidAuthHeader = errors.New("server: invalid authentication header")
+// ErrInvalidAuthHeader is returned when the Authorization header fails to be
+// parsed.
+var ErrInvalidAuthHeader = errors.New("server: invalid authorization header")
 
 func generateNonce(size int) string {
 	bytes := make([]byte, size)
@@ -47,8 +49,8 @@ func parseAuthHeader(header string) (sipnet.HeaderArgs, error) {
 func requestAuthentication(r *sipnet.Request, conn *sipnet.Conn, from sipnet.User) {
 	resp := sipnet.NewResponse()
 
-	callId := r.Header.Get("Call-ID")
-	if callId == "" {
+	callID := r.Header.Get("Call-ID")
+	if callID == "" {
 		resp.BadRequest(conn, r, "Missing required Call-ID header.")
 		return
 	}
@@ -71,7 +73,7 @@ func requestAuthentication(r *sipnet.Request, conn *sipnet.Conn, from sipnet.Use
 	resp.Header.Set("WWW-Authenticate", "Digest "+authArgs.CommaString())
 
 	authSessionMutex.Lock()
-	authSessions[callId] = authSession{
+	authSessions[callID] = authSession{
 		nonce:   nonce,
 		user:    from,
 		conn:    conn,
@@ -90,9 +92,9 @@ func md5Hex(data string) string {
 
 func checkAuthorization(r *sipnet.Request, conn *sipnet.Conn,
 	authArgs sipnet.HeaderArgs, user sipnet.User) {
-	callId := r.Header.Get("Call-ID")
+	callID := r.Header.Get("Call-ID")
 	authSessionMutex.Lock()
-	session, found := authSessions[callId]
+	session, found := authSessions[callID]
 	authSessionMutex.Unlock()
 	if !found {
 		requestAuthentication(r, conn, user)
@@ -181,9 +183,9 @@ func HandleRegister(r *sipnet.Request, conn *sipnet.Conn) {
 func registrationJanitor() {
 	for {
 		authSessionMutex.Lock()
-		for callId, session := range authSessions {
+		for callID, session := range authSessions {
 			if time.Now().Sub(session.created) > time.Second*30 {
-				delete(authSessions, callId)
+				delete(authSessions, callID)
 			}
 		}
 		authSessionMutex.Unlock()

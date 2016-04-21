@@ -55,7 +55,7 @@ func ReadRequest(rd io.Reader) (*Request, error) {
 	return r, nil
 }
 
-// ReadRequest reads a SIP response (i.e. message from a UAS) from a reader.
+// ReadResponse reads a SIP response (i.e. message from a UAS) from a reader.
 func ReadResponse(rd io.Reader) (*Response, error) {
 	buf := bufio.NewReader(rd)
 	line, err := buf.ReadString('\n')

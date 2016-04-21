@@ -7,6 +7,7 @@ import (
 // SIPVersion is the version of SIP used by this library.
 const SIPVersion = "SIP/2.0"
 
+// SIP request methods.
 const (
 	MethodInvite   = "INVITE"
 	MethodAck      = "ACK"

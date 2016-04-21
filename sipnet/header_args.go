@@ -6,9 +6,12 @@ import (
 	"strings"
 )
 
+// HeaderArgs represents the arguments which can be found in headers,
+// and in other simple key value fields whose format is of a
+// key=value with a delimiter.
 type HeaderArgs map[string]string
 
-// ParseList parses a comma, semicolon, or new line seperated list of values
+// ParseList parses a comma, semicolon, or new line separated list of values
 // and returns list elements.
 //
 // Lifted from https://code.google.com/p/gorilla/source/browse/http/parser/parser.go
@@ -50,7 +53,7 @@ func ParseList(value string) []string {
 }
 
 // ParsePairs extracts key/value pairs from comma, semicolon, or new line
-// seperated values.
+// separated values.
 //
 // Lifted from https://code.google.com/p/gorilla/source/browse/http/parser/parser.go
 func ParsePairs(value string) HeaderArgs {
@@ -69,7 +72,7 @@ func ParsePairs(value string) HeaderArgs {
 	return m
 }
 
-// Parse parses header arguments from a full header.
+// ParseHeaderArgs parses header arguments from a full header.
 func ParseHeaderArgs(str string) HeaderArgs {
 	argLocation := strings.Index(str, ";")
 	if argLocation < 0 {
@@ -97,7 +100,7 @@ func (h HeaderArgs) Set(key, value string) {
 }
 
 // SemicolonString returns the header arguments as a semicolon
-// seperated unquoted strings with a leading semicolon.
+// separated unquoted strings with a leading semicolon.
 func (h HeaderArgs) SemicolonString() string {
 	var result string
 	for key, value := range h {
@@ -111,7 +114,7 @@ func (h HeaderArgs) SemicolonString() string {
 }
 
 // CommaString returns the header arguments as a comma and space
-// seperated string.
+// separated string.
 func (h HeaderArgs) CommaString() string {
 	if len(h) == 0 {
 		return ""
@@ -124,7 +127,7 @@ func (h HeaderArgs) CommaString() string {
 	return result[:len(result)-2]
 }
 
-// CRLFString returns the header arguments as a CRLF seperated string.
+// CRLFString returns the header arguments as a CRLF separated string.
 func (h HeaderArgs) CRLFString() string {
 	if len(h) == 0 {
 		return ""

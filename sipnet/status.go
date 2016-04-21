@@ -1,5 +1,6 @@
 package sipnet
 
+// SIP response status codes.
 const (
 	StatusTrying               = 100
 	StatusRinging              = 180
