@@ -1,3 +1,5 @@
+// An example simple server using the server and sipnet libraries.
+
 package main
 
 import (

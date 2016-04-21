@@ -1,3 +1,5 @@
+// Package server contains a SIP server which can manage authentication
+// and signalling between multiple clients.
 package server
 
 type account struct {
