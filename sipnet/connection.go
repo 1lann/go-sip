@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	"fmt"
@@ -17,24 +16,16 @@ type Conn struct {
 	address     net.Addr
 	udpReceiver chan []byte
 	closed      bool
-
-	locked       bool
-	lockWait     *sync.WaitGroup
-	lockedReader io.Reader
-
+	locked      bool
 	writeBuffer *bytes.Buffer
 	readMessage chan interface{}
 	lastMessage time.Time
 }
 
-// Read reads raw bytes from the connection after it is locked.
-func (c *Conn) Read(b []byte) (int, error) {
+// Read reads either a *Request, a *Response, or an error from the connection.
+func (c *Conn) Read() interface{} {
 	if c.closed {
 		return io.EOF
-	}
-
-	if c.lockedReader != nil {
-		return c.lockedReader.Read(b)
 	}
 
 	msg, more := <-c.readMessage
@@ -42,36 +33,19 @@ func (c *Conn) Read(b []byte) (int, error) {
 		return io.EOF
 	}
 
-	if c.transport == "udp" {
-		resp := msg.([]byte)
-		buf := new(bytes.Buffer)
-		buf.Write(resp)
-		c.lockedReader = buf
-		return buf.Read(b)
-	}
-
-	rd := msg.(io.Reader)
-	c.lockedReader = rd
-	return c.lockedReader.Read(b)
+	return msg
 }
 
 // Lock must be called to use Read(). It locks the connection to be read by
 // the user.
 func (c *Conn) Lock() {
-	if !c.locked {
-		c.locked = true
-		c.lockWait.Add(1)
-	}
+	c.locked = true
 }
 
 // Unlock should be called after the user is finished reading custom
 // data to the connection.
 func (c *Conn) Unlock() {
-	if c.locked {
-		c.locked = false
-		c.lockedReader = nil
-		c.lockWait.Done()
-	}
+	c.locked = false
 }
 
 func (c *Conn) readRequest() (*Request, error) {
@@ -81,7 +55,7 @@ func (c *Conn) readRequest() (*Request, error) {
 		}
 
 		for c.locked {
-			c.lockWait.Wait()
+			time.Sleep(time.Second * 2)
 		}
 
 		msg, more := <-c.readMessage
@@ -119,17 +93,6 @@ func (c *Conn) udpReader() {
 			continue
 		}
 
-		if c.locked {
-			if c.lockedReader != nil {
-				buf := c.lockedReader.(*bytes.Buffer)
-				buf.Write(received)
-				continue
-			}
-
-			c.readMessage <- received
-			continue
-		}
-
 		rd := bytes.NewReader(received)
 		if bytes.Compare(received[:3], []byte("SIP")) == 0 {
 			resp, err := ReadResponse(rd)
@@ -162,12 +125,6 @@ func (c *Conn) tcpReader() {
 		}
 
 		rd := io.MultiReader(bytes.NewReader(buf), c.conn)
-
-		if c.locked {
-			c.readMessage <- rd
-			c.lockWait.Wait()
-			continue
-		}
 
 		if bytes.Compare(buf, []byte("SIP")) == 0 {
 			resp, err := ReadResponse(rd)
