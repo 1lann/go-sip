@@ -1,36 +1,38 @@
 package sipnet
 
 import (
-	"bytes"
 	"errors"
-	"io"
 	"net"
 	"sync"
 	"time"
-
-	"fmt"
 )
 
 var (
 	// ErrClosed is returned if AcceptRequest is called on a closed listener.
+	// io.EOF may also be returned on a closed underlying connection, in which
+	// the connection itself will also be returned.
 	ErrClosed        = errors.New("sip: closed")
 	ErrInvalidBranch = errors.New("sip: invalid branch")
 )
 
 type requestPackage struct {
-	responseWriter *ResponseWriter
-	req            *Request
-	err            error
+	conn *Conn
+	req  *Request
+	err  error
 }
 
 // Listener represents a TCP and UDP wrapper listener.
 type Listener struct {
-	tcpListener      net.Listener
-	udpListener      *net.UDPConn
-	closed           bool
+	tcpListener net.Listener
+	udpListener *net.UDPConn
+	closed      bool
+
 	requestChannel   chan requestPackage
 	receivedBranches map[string]time.Time
 	branchMutex      *sync.Mutex
+
+	udpPool      map[string]*Conn
+	udpPoolMutex *sync.Mutex
 }
 
 // Listen listens on an address (IP:port) on both TCP and UDP.
@@ -86,25 +88,31 @@ func branchJanitor(listener *Listener) {
 }
 
 func handleTCPListening(listener *Listener) {
+	defer listener.Close()
+
 	for {
 		conn, err := listener.tcpListener.Accept()
 		if err != nil {
 			if listener.closed {
 				return
 			}
+
 			listener.requestChannel <- requestPackage{
-				responseWriter: nil,
-				req:            nil,
-				err:            err,
+				conn: nil,
+				req:  nil,
+				err:  err,
 			}
-			continue
+
+			return
 		}
 
-		go handleTCPConn(listener, conn)
+		listener.registerTCPConn(conn)
 	}
 }
 
 func handleUDPListening(listener *Listener) {
+	defer listener.Close()
+
 	for {
 		data := make([]byte, 65535)
 		n, addr, err := listener.udpListener.ReadFrom(data)
@@ -114,63 +122,21 @@ func handleUDPListening(listener *Listener) {
 			}
 
 			listener.requestChannel <- requestPackage{
-				responseWriter: nil,
-				req:            nil,
-				err:            err,
+				conn: nil,
+				req:  nil,
+				err:  err,
 			}
 
-			continue
-		}
-
-		if bytes.Compare(data[:n], []byte("\r\n\r\n")) == 0 {
-			// Acknowledge keep alive
-			listener.udpListener.WriteTo([]byte("\r\n"), addr)
-			continue
-		}
-
-		req, err := ReadRequest(bytes.NewBuffer(data[:n]))
-
-		listener.requestChannel <- requestPackage{
-			responseWriter: NewResponseWriter(listener.udpListener, addr),
-			req:            req,
-			err:            err,
-		}
-
-		if err != nil {
-			fmt.Println("read request error:", err)
-		}
-	}
-}
-
-func handleTCPConn(l *Listener, conn net.Conn) {
-	defer conn.Close()
-
-	for {
-		req, err := ReadRequest(conn)
-		if l.closed {
 			return
 		}
 
-		if err == io.EOF {
-			return
-		}
-
-		l.requestChannel <- requestPackage{
-			responseWriter: NewResponseWriter(conn, conn.RemoteAddr()),
-			req:            req,
-			err:            err,
-		}
-
-		if err != nil {
-			fmt.Println("read request error:", err)
-		}
+		listener.getUDPConnFromPool(addr).writeReceivedUDP(data[:n])
 	}
 }
 
 // AcceptRequest blocks until it receives a Request message on either TCP or UDP
-// listeners. Responses are to be written to *ResponseWriter. The request
-// acceptor should be written in a stateless manner.
-func (l *Listener) AcceptRequest() (*Request, *ResponseWriter, error) {
+// listeners. Responses are to be written to *Conn (and then flushed).
+func (l *Listener) AcceptRequest() (*Request, *Conn, error) {
 	for {
 		if l.closed {
 			return nil, nil, ErrClosed
@@ -180,12 +146,12 @@ func (l *Listener) AcceptRequest() (*Request, *ResponseWriter, error) {
 		if resp.err == nil {
 			via, err := ParseVia(resp.req.Header.Get("Via"))
 			if err != nil {
-				return resp.req, resp.responseWriter, err
+				return resp.req, resp.conn, err
 			}
 
 			branch := via.Arguments.Get("branch")
 			if branch == "" || len(branch) < 8 || branch[:7] != "z9hG4bK" {
-				return resp.req, resp.responseWriter, ErrInvalidBranch
+				return resp.req, resp.conn, ErrInvalidBranch
 			}
 
 			l.branchMutex.Lock()
@@ -199,7 +165,7 @@ func (l *Listener) AcceptRequest() (*Request, *ResponseWriter, error) {
 			l.branchMutex.Unlock()
 		}
 
-		return resp.req, resp.responseWriter, resp.err
+		return resp.req, resp.conn, resp.err
 	}
 }
 

@@ -15,10 +15,10 @@ import (
 var hostname = "chuie.io"
 
 type authSession struct {
-	nonce     string
-	user      sipnet.User
-	ipAddress string
-	created   time.Time
+	nonce   string
+	user    sipnet.User
+	conn    *sipnet.Conn
+	created time.Time
 }
 
 // a map[call id]authSession pair
@@ -44,8 +44,7 @@ func parseAuthHeader(header string) (sipnet.HeaderArgs, error) {
 	return sipnet.ParsePairs(header[7:]), nil
 }
 
-func requestAuthentication(r *sipnet.Request, w *sipnet.ResponseWriter,
-	from sipnet.User) {
+func requestAuthentication(r *sipnet.Request, conn *sipnet.Conn, from sipnet.User) {
 	resp := sipnet.NewResponse()
 
 	callId := r.Header.Get("Call-ID")
@@ -55,7 +54,7 @@ func requestAuthentication(r *sipnet.Request, w *sipnet.ResponseWriter,
 	}
 
 	if session, found := authSessions[callId]; found {
-		if session.ipAddress != w.Addr().String() {
+		if session.conn != conn {
 			// Ignore imposter
 			return
 		}
@@ -63,7 +62,7 @@ func requestAuthentication(r *sipnet.Request, w *sipnet.ResponseWriter,
 
 	nonce, err := generateNonce(32)
 	if err != nil {
-		resp.ServerError(w, r, "Failed to generate nonce.")
+		resp.ServerError(conn, r, "Failed to generate nonce.")
 		return
 	}
 
@@ -84,10 +83,10 @@ func requestAuthentication(r *sipnet.Request, w *sipnet.ResponseWriter,
 
 	authSessionMutex.Lock()
 	authSessions[callId] = authSession{
-		nonce:     nonce,
-		user:      from,
-		ipAddress: w.Addr().String(),
-		created:   time.Now(),
+		nonce:   nonce,
+		user:    from,
+		conn:    w.Addr().String(),
+		created: time.Now(),
 	}
 	authSessionMutex.Unlock()
 
