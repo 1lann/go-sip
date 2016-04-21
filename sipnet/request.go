@@ -34,8 +34,6 @@ func NewRequest() *Request {
 	}
 }
 
-// func (r *Request) SetAuthentication()
-
 // WriteTo writes the request data to a Conn. It automatically adds a
 // a Content-Length to the header, calls Flush() on the Conn.
 func (r *Request) WriteTo(conn *Conn) error {

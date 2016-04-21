@@ -30,6 +30,7 @@ func ParseVia(str string) (Via, error) {
 	}, nil
 }
 
+// String returns the string representation of the Via header line.
 func (v Via) String() string {
 	return v.SIPVersion + "/" + v.Transport + " " + v.Client +
 		v.Arguments.SemicolonString()

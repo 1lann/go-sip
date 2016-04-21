@@ -35,14 +35,18 @@ func ParseURI(str string) (URI, error) {
 	}, nil
 }
 
+// String returns the full text representation of the URI with additional
+// semicolon arguments.
 func (u URI) String() string {
 	return u.SchemeUserDomain() + u.Arguments.SemicolonString()
 }
 
+// SchemeUserDomain returns the text representation of the scheme:user@domain.
 func (u URI) SchemeUserDomain() string {
 	return u.Scheme + ":" + u.UserDomain()
 }
 
+// UserDomain returns the text representation of user@domain.
 func (u URI) UserDomain() string {
 	return u.Username + "@" + u.Domain
 }
