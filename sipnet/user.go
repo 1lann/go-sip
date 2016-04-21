@@ -66,5 +66,5 @@ func ParseUserHeader(h Header) (User, User, error) {
 		from, err = ParseUser(h.Get("From"))
 	}
 
-	return to, from, err
+	return from, to, err
 }

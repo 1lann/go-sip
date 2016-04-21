@@ -1,7 +1,6 @@
 package sipnet
 
 import (
-	"io"
 	"strconv"
 )
 
@@ -37,22 +36,25 @@ func NewRequest() *Request {
 
 // func (r *Request) SetAuthentication()
 
-// WriteTo writes the request data to a writer. It automatically adds a
-// a Content-Length to the header.
-func (r *Request) WriteTo(w io.Writer) error {
-	_, err := w.Write([]byte(r.Method + " " + r.Server + SIPVersion + "\r\n"))
+// WriteTo writes the request data to a Conn. It automatically adds a
+// a Content-Length to the header, calls Flush() on the Conn.
+func (r *Request) WriteTo(conn *Conn) error {
+	_, err := conn.Write([]byte(r.Method + " " + r.Server + " " + SIPVersion + "\r\n"))
 	if err != nil {
 		return err
 	}
 
 	r.Header.Set("Content-Length", strconv.Itoa(len(r.Body)))
 
-	_, err = r.Header.WriteTo(w)
+	_, err = r.Header.WriteTo(conn)
 	if err != nil {
 		return err
 	}
 
-	_, err = w.Write(r.Body)
+	_, err = conn.Write(r.Body)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return conn.Flush()
 }

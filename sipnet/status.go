@@ -32,7 +32,7 @@ const (
 	StatusBadExtension                = 420
 	StatusExtensionRequired           = 421
 	StatusIntervalTooBrief            = 423
-	StatusTemporarilyUnavailable      = 480
+	StatusNoResponse                  = 480
 	StatusCallTransactionDoesNotExist = 481
 	StatusLoopDetected                = 482
 	StatusTooManyHops                 = 483
@@ -87,7 +87,7 @@ var statusTexts = map[int]string{
 	StatusBadExtension:                "Bad Extension",
 	StatusExtensionRequired:           "Extension Required",
 	StatusIntervalTooBrief:            "Interval Too Brief",
-	StatusTemporarilyUnavailable:      "Temporarily Unavailable",
+	StatusNoResponse:                  "No Response",
 	StatusCallTransactionDoesNotExist: "Call/Transaction Does Not Exist",
 	StatusLoopDetected:                "Loop Detected",
 	StatusTooManyHops:                 "Too Many Hops",

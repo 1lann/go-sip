@@ -45,7 +45,7 @@ func (r *Response) WriteTo(conn *Conn, req *Request) error {
 	r.Header.Set("CSeq", req.Header.Get("CSeq"))
 	r.Header.Set("Call-ID", req.Header.Get("Call-ID"))
 
-	_, err = r.Header.WriteTo(w)
+	_, err = r.Header.WriteTo(conn)
 	if err != nil {
 		return err
 	}

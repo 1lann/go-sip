@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"fmt"
 )
 
+// Conn represents a connection with a UA. It can be on UDP or TCP.
 type Conn struct {
 	transport   string
 	listener    *Listener
@@ -20,6 +22,9 @@ type Conn struct {
 	writeBuffer *bytes.Buffer
 	readMessage chan interface{}
 	lastMessage time.Time
+
+	receivedBranches map[string]time.Time
+	branchMutex      *sync.Mutex
 }
 
 // Read reads either a *Request, a *Response, or an error from the connection.
@@ -37,7 +42,7 @@ func (c *Conn) Read() interface{} {
 }
 
 // Lock must be called to use Read(). It locks the connection to be read by
-// the user.
+// the user rather than by read by AcceptRequest().
 func (c *Conn) Lock() {
 	c.locked = true
 }
@@ -109,6 +114,7 @@ func (c *Conn) udpReader() {
 			c.readMessage <- err
 			continue
 		}
+
 		c.readMessage <- req
 	}
 }
@@ -141,6 +147,7 @@ func (c *Conn) tcpReader() {
 			c.readMessage <- err
 			continue
 		}
+
 		c.readMessage <- req
 	}
 }
@@ -153,6 +160,7 @@ func (c *Conn) writeReceivedUDP(b []byte) {
 	c.udpReceiver <- b
 }
 
+// Write writes data to a buffer.
 func (c *Conn) Write(b []byte) (int, error) {
 	if c.closed {
 		return 0, io.ErrClosedPipe
@@ -161,6 +169,8 @@ func (c *Conn) Write(b []byte) (int, error) {
 	return c.writeBuffer.Write(b)
 }
 
+// Flush flushes the buffered data to be written. In the case of using UDP,
+// the buffered data will be written in a single UDP packet.
 func (c *Conn) Flush() error {
 	if c.closed {
 		return io.ErrClosedPipe
@@ -175,18 +185,22 @@ func (c *Conn) Flush() error {
 
 	_, err := c.conn.Write(c.writeBuffer.Bytes())
 	c.writeBuffer.Reset()
-	return err
 
+	return err
 }
 
+// Transport returns the transport protocol the connection is using.
+// i.e. "tcp" or "udp".
 func (c *Conn) Transport() string {
 	return c.transport
 }
 
+// Addr returns the network address of the connected UA.
 func (c *Conn) Addr() net.Addr {
 	return c.address
 }
 
+// Close closes the connection.
 func (c *Conn) Close() error {
 	if c.closed {
 		return nil
@@ -205,4 +219,21 @@ func (c *Conn) Close() error {
 	}
 
 	return c.conn.Close()
+}
+
+func (c *Conn) branchJanitor() {
+	for {
+		time.Sleep(time.Second * 10)
+		if c.closed {
+			return
+		}
+
+		c.branchMutex.Lock()
+		for branch, t := range c.receivedBranches {
+			if time.Now().Sub(t) > 30*time.Second {
+				delete(c.receivedBranches, branch)
+			}
+		}
+		c.branchMutex.Unlock()
+	}
 }

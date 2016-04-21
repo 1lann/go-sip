@@ -12,7 +12,7 @@ import (
 )
 
 // TODO: Place this in a configuration file
-var hostname = "chuie.io"
+var hostname = "localhost"
 
 type authSession struct {
 	nonce   string
@@ -27,13 +27,13 @@ var authSessionMutex = new(sync.Mutex)
 
 var ErrInvalidAuthHeader = errors.New("server: invalid authentication header")
 
-func generateNonce(size int) (string, error) {
+func generateNonce(size int) string {
 	bytes := make([]byte, size)
 	_, err := rand.Read(bytes)
 	if err != nil {
-		return "", err
+		panic(err)
 	}
-	return hex.EncodeToString(bytes), nil
+	return hex.EncodeToString(bytes)
 }
 
 func parseAuthHeader(header string) (sipnet.HeaderArgs, error) {
@@ -49,22 +49,11 @@ func requestAuthentication(r *sipnet.Request, conn *sipnet.Conn, from sipnet.Use
 
 	callId := r.Header.Get("Call-ID")
 	if callId == "" {
-		resp.BadRequest(w, r, "Missing required Call-ID header.")
+		resp.BadRequest(conn, r, "Missing required Call-ID header.")
 		return
 	}
 
-	if session, found := authSessions[callId]; found {
-		if session.conn != conn {
-			// Ignore imposter
-			return
-		}
-	}
-
-	nonce, err := generateNonce(32)
-	if err != nil {
-		resp.ServerError(conn, r, "Failed to generate nonce.")
-		return
-	}
+	nonce := generateNonce(32)
 
 	resp.StatusCode = sipnet.StatusUnauthorized
 	// No auth header, deny.
@@ -85,12 +74,12 @@ func requestAuthentication(r *sipnet.Request, conn *sipnet.Conn, from sipnet.Use
 	authSessions[callId] = authSession{
 		nonce:   nonce,
 		user:    from,
-		conn:    w.Addr().String(),
+		conn:    conn,
 		created: time.Now(),
 	}
 	authSessionMutex.Unlock()
 
-	resp.WriteTo(w, r)
+	resp.WriteTo(conn, r)
 	return
 }
 
@@ -99,36 +88,31 @@ func md5Hex(data string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func checkAuthorization(r *sipnet.Request, w *sipnet.ResponseWriter,
+func checkAuthorization(r *sipnet.Request, conn *sipnet.Conn,
 	authArgs sipnet.HeaderArgs, user sipnet.User) {
 	callId := r.Header.Get("Call-ID")
 	authSessionMutex.Lock()
 	session, found := authSessions[callId]
 	authSessionMutex.Unlock()
 	if !found {
-		requestAuthentication(r, w, user)
-		return
-	}
-
-	if session.ipAddress != w.Addr().String() {
-		// Ignore imposter
+		requestAuthentication(r, conn, user)
 		return
 	}
 
 	if authArgs.Get("username") != user.URI.Username {
-		requestAuthentication(r, w, user)
+		requestAuthentication(r, conn, user)
 		return
 	}
 
 	if authArgs.Get("nonce") != session.nonce {
-		requestAuthentication(r, w, user)
+		requestAuthentication(r, conn, user)
 		return
 	}
 
 	username := user.URI.Username
 	account, found := accounts[username]
 	if !found {
-		requestAuthentication(r, w, user)
+		requestAuthentication(r, conn, user)
 		return
 	}
 
@@ -138,59 +122,60 @@ func checkAuthorization(r *sipnet.Request, w *sipnet.ResponseWriter,
 		":" + authArgs.Get("cnonce") + ":auth:" + ha2)
 
 	if response != authArgs.Get("response") {
-		requestAuthentication(r, w, user)
+		requestAuthentication(r, conn, user)
 		return
 	}
 
-	userTag, err := registerUser(session)
-	if err != nil {
-		resp := sipnet.NewResponse()
-		resp.ServerError(w, r, "Failed to register authenticated user.")
-		return
+	if r.Header.Get("Expires") == "0" {
+		registeredUsersMutex.Lock()
+		delete(registeredUsers, username)
+		registeredUsersMutex.Unlock()
+		println("logged out " + username)
+	} else {
+		registerUser(session)
+		println("registered " + username)
 	}
 
 	resp := sipnet.NewResponse()
 	resp.StatusCode = sipnet.StatusOK
 	resp.Header.Set("From", user.String())
 
-	user.Arguments.Set("tag", nonce)
+	user.Arguments.Set("tag", generateNonce(5))
 	resp.Header.Set("To", user.String())
-	resp.WriteTo(w, r)
-
-	authSessionMutex.Lock()
-	delete(authSessions, callId)
-	authSessionMutex.Unlock()
+	resp.WriteTo(conn, r)
 
 	return
 }
 
-func HandleRegister(r *sipnet.Request, w *sipnet.ResponseWriter) {
+// HandleRegister handles REGISTER SIP requests.
+func HandleRegister(r *sipnet.Request, conn *sipnet.Conn) {
 	from, to, err := sipnet.ParseUserHeader(r.Header)
 	if err != nil {
 		resp := sipnet.NewResponse()
-		resp.BadRequest(w, r, "Failed to parse From or To header.")
+		resp.BadRequest(conn, r, "Failed to parse From or To header.")
 		return
 	}
 
 	if to.URI.UserDomain() != from.URI.UserDomain() {
 		resp := sipnet.NewResponse()
-		resp.BadRequest(w, r, "User in To and From fields do not match.")
+		resp.BadRequest(conn, r, "User in To and From fields do not match.")
 		return
 	}
 
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		requestAuthentication(r, w, from)
+		requestAuthentication(r, conn, from)
+		return
 	}
 
 	args, err := parseAuthHeader(authHeader)
 	if err != nil {
 		resp := sipnet.NewResponse()
-		resp.BadRequest(w, r, "Failed to parse Authorization header.")
+		resp.BadRequest(conn, r, "Failed to parse Authorization header.")
 		return
 	}
 
-	checkAuthorization(r, w, args, from)
+	checkAuthorization(r, conn, args, from)
 }
 
 func registrationJanitor() {

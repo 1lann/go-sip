@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net"
 	"sync"
-	"time"
 )
 
 var (
@@ -27,9 +26,7 @@ type Listener struct {
 	udpListener *net.UDPConn
 	closed      bool
 
-	requestChannel   chan requestPackage
-	receivedBranches map[string]time.Time
-	branchMutex      *sync.Mutex
+	requestChannel chan requestPackage
 
 	udpPool      map[string]*Conn
 	udpPoolMutex *sync.Mutex
@@ -55,36 +52,19 @@ func Listen(addr string) (*Listener, error) {
 	}
 
 	listener := &Listener{
-		tcpListener:      tcpListener,
-		udpListener:      udpListener,
-		closed:           false,
-		requestChannel:   make(chan requestPackage),
-		receivedBranches: make(map[string]time.Time),
-		branchMutex:      new(sync.Mutex),
+		tcpListener:    tcpListener,
+		udpListener:    udpListener,
+		closed:         false,
+		requestChannel: make(chan requestPackage),
+		udpPool:        make(map[string]*Conn),
+		udpPoolMutex:   new(sync.Mutex),
 	}
 
-	go branchJanitor(listener)
+	go listener.udpJanitor()
 	go handleTCPListening(listener)
 	go handleUDPListening(listener)
 
 	return listener, nil
-}
-
-func branchJanitor(listener *Listener) {
-	for {
-		time.Sleep(time.Second * 10)
-		if listener.closed {
-			return
-		}
-
-		listener.branchMutex.Lock()
-		for branch, t := range listener.receivedBranches {
-			if time.Now().Sub(t) > 30*time.Second {
-				delete(listener.receivedBranches, branch)
-			}
-		}
-		listener.branchMutex.Unlock()
-	}
 }
 
 func handleTCPListening(listener *Listener) {
@@ -142,29 +122,6 @@ func (l *Listener) AcceptRequest() (*Request, *Conn, error) {
 			return nil, nil, ErrClosed
 		}
 		resp := <-l.requestChannel
-
-		if resp.err == nil {
-			via, err := ParseVia(resp.req.Header.Get("Via"))
-			if err != nil {
-				return resp.req, resp.conn, err
-			}
-
-			branch := via.Arguments.Get("branch")
-			if branch == "" || len(branch) < 8 || branch[:7] != "z9hG4bK" {
-				return resp.req, resp.conn, ErrInvalidBranch
-			}
-
-			l.branchMutex.Lock()
-			if _, found := l.receivedBranches[branch]; found {
-				// Repeated message, ignore.
-				l.branchMutex.Unlock()
-				continue
-			}
-
-			l.receivedBranches[branch] = time.Now()
-			l.branchMutex.Unlock()
-		}
-
 		return resp.req, resp.conn, resp.err
 	}
 }
