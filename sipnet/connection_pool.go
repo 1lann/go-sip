@@ -14,18 +14,18 @@ func (l *Listener) getUDPConnFromPool(address net.Addr) *Conn {
 	conn, found := l.udpPool[address.String()]
 	if !found {
 		conn = &Conn{
-			transport:        "udp",
-			listener:         l,
-			conn:             l.udpListener,
-			address:          address,
-			udpReceiver:      make(chan []byte),
-			closed:           false,
-			locked:           false,
-			writeBuffer:      new(bytes.Buffer),
-			readMessage:      make(chan interface{}),
-			lastMessage:      time.Now(),
-			receivedBranches: make(map[string]time.Time),
-			branchMutex:      new(sync.Mutex),
+			Transport:        "udp",
+			Listener:         l,
+			Conn:             l.udpListener,
+			Address:          address,
+			UdpReceiver:      make(chan []byte),
+			Closed:           false,
+			Locked:           false,
+			WriteBuffer:      new(bytes.Buffer),
+			ReadMessage:      make(chan interface{}),
+			LastMessage:      time.Now(),
+			ReceivedBranches: make(map[string]time.Time),
+			BranchMutex:      new(sync.Mutex),
 		}
 
 		l.udpPool[address.String()] = conn
@@ -40,18 +40,18 @@ func (l *Listener) getUDPConnFromPool(address net.Addr) *Conn {
 
 func (l *Listener) registerTCPConn(netConn net.Conn) {
 	conn := &Conn{
-		transport:        "tcp",
-		listener:         l,
-		conn:             netConn,
-		address:          netConn.RemoteAddr(),
-		udpReceiver:      nil,
-		closed:           false,
-		locked:           false,
-		writeBuffer:      new(bytes.Buffer),
-		readMessage:      make(chan interface{}),
-		lastMessage:      time.Time{},
-		receivedBranches: make(map[string]time.Time),
-		branchMutex:      new(sync.Mutex),
+		Transport:        "tcp",
+		Listener:         l,
+		Conn:             netConn,
+		Address:          netConn.RemoteAddr(),
+		UdpReceiver:      nil,
+		Closed:           false,
+		Locked:           false,
+		WriteBuffer:      new(bytes.Buffer),
+		ReadMessage:      make(chan interface{}),
+		LastMessage:      time.Time{},
+		ReceivedBranches: make(map[string]time.Time),
+		BranchMutex:      new(sync.Mutex),
 	}
 
 	go conn.tcpReader()
@@ -80,7 +80,7 @@ func (l *Listener) udpJanitor() {
 		time.Sleep(time.Second * 10)
 		l.udpPoolMutex.Lock()
 		for address, conn := range l.udpPool {
-			if time.Now().Sub(conn.lastMessage) > time.Second*30 {
+			if time.Now().Sub(conn.LastMessage) > time.Second*30 {
 				// Disconnect
 				conn.Close()
 				delete(l.udpPool, address)

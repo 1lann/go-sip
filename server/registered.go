@@ -1,8 +1,9 @@
 package server
 
 import (
-	"github.com/1lann/go-sip/sipnet"
 	"sync"
+
+	"github.com/1lann/go-sip/sipnet"
 )
 
 type registeredUser struct {

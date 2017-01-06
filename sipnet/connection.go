@@ -12,28 +12,28 @@ import (
 
 // Conn represents a connection with a UA. It can be on UDP or TCP.
 type Conn struct {
-	transport   string
-	listener    *Listener
-	conn        net.Conn
-	address     net.Addr
-	udpReceiver chan []byte
-	closed      bool
-	locked      bool
-	writeBuffer *bytes.Buffer
-	readMessage chan interface{}
-	lastMessage time.Time
+	Transport   string
+	Listener    *Listener
+	Conn        net.Conn
+	Address     net.Addr
+	UdpReceiver chan []byte
+	Closed      bool
+	Locked      bool
+	WriteBuffer *bytes.Buffer
+	ReadMessage chan interface{}
+	LastMessage time.Time
 
-	receivedBranches map[string]time.Time
-	branchMutex      *sync.Mutex
+	ReceivedBranches map[string]time.Time
+	BranchMutex      *sync.Mutex
 }
 
 // Read reads either a *Request, a *Response, or an error from the connection.
 func (c *Conn) Read() interface{} {
-	if c.closed {
+	if c.Closed {
 		return io.EOF
 	}
 
-	msg, more := <-c.readMessage
+	msg, more := <-c.ReadMessage
 	if !more {
 		return io.EOF
 	}
@@ -44,32 +44,32 @@ func (c *Conn) Read() interface{} {
 // Lock must be called to use Read(). It locks the connection to be read by
 // the user rather than by read by AcceptRequest().
 func (c *Conn) Lock() {
-	c.locked = true
+	c.Locked = true
 }
 
 // Unlock should be called after the user is finished reading custom
 // data to the connection.
 func (c *Conn) Unlock() {
-	c.locked = false
+	c.Locked = false
 }
 
 func (c *Conn) readRequest() (*Request, error) {
 	for {
-		if c.closed {
+		if c.Closed {
 			return nil, io.EOF
 		}
 
-		for c.locked {
+		for c.Locked {
 			time.Sleep(time.Second * 2)
 		}
 
-		msg, more := <-c.readMessage
+		msg, more := <-c.ReadMessage
 		if !more {
 			return nil, io.EOF
 		}
 
-		if c.locked {
-			c.readMessage <- msg
+		if c.Locked {
+			c.ReadMessage <- msg
 			continue
 		}
 
@@ -86,12 +86,12 @@ func (c *Conn) readRequest() (*Request, error) {
 
 func (c *Conn) udpReader() {
 	for {
-		received, more := <-c.udpReceiver
+		received, more := <-c.UdpReceiver
 		if !more {
 			return
 		}
 
-		c.lastMessage = time.Now()
+		c.LastMessage = time.Now()
 		if bytes.Compare(received, []byte("\r\n\r\n")) == 0 {
 			// Acknowledge keep alive
 			c.Write([]byte("\r\n"))
@@ -102,27 +102,27 @@ func (c *Conn) udpReader() {
 		if bytes.Compare(received[:3], []byte("SIP")) == 0 {
 			resp, err := ReadResponse(rd)
 			if err != nil {
-				c.readMessage <- err
+				c.ReadMessage <- err
 				continue
 			}
-			c.readMessage <- resp
+			c.ReadMessage <- resp
 			continue
 		}
 
 		req, err := ReadRequest(rd)
 		if err != nil {
-			c.readMessage <- err
+			c.ReadMessage <- err
 			continue
 		}
 
-		c.readMessage <- req
+		c.ReadMessage <- req
 	}
 }
 
 func (c *Conn) tcpReader() {
 	for {
 		buf := make([]byte, 3)
-		_, err := io.ReadFull(c.conn, buf)
+		_, err := io.ReadFull(c.Conn, buf)
 		if err != nil {
 			if err == io.ErrUnexpectedEOF || err == io.EOF {
 				c.Close()
@@ -130,110 +130,104 @@ func (c *Conn) tcpReader() {
 			}
 		}
 
-		rd := io.MultiReader(bytes.NewReader(buf), c.conn)
+		rd := io.MultiReader(bytes.NewReader(buf), c.Conn)
 
 		if bytes.Compare(buf, []byte("SIP")) == 0 {
 			resp, err := ReadResponse(rd)
 			if err != nil {
-				c.readMessage <- err
+				c.ReadMessage <- err
 				continue
 			}
-			c.readMessage <- resp
+			c.ReadMessage <- resp
 			continue
 		}
 
 		req, err := ReadRequest(rd)
 		if err != nil {
-			c.readMessage <- err
+			c.ReadMessage <- err
 			continue
 		}
 
-		c.readMessage <- req
+		c.ReadMessage <- req
 	}
 }
 
 func (c *Conn) writeReceivedUDP(b []byte) {
-	if c.closed {
+	if c.Closed {
 		return
 	}
 
-	c.udpReceiver <- b
+	c.UdpReceiver <- b
 }
 
 // Write writes data to a buffer.
 func (c *Conn) Write(b []byte) (int, error) {
-	if c.closed {
+	if c.Closed {
 		return 0, io.ErrClosedPipe
 	}
 
-	return c.writeBuffer.Write(b)
+	return c.WriteBuffer.Write(b)
 }
 
 // Flush flushes the buffered data to be written. In the case of using UDP,
 // the buffered data will be written in a single UDP packet.
 func (c *Conn) Flush() error {
-	if c.closed {
+	if c.Closed {
 		return io.ErrClosedPipe
 	}
 
-	if c.transport == "udp" {
-		udpConn := c.conn.(*net.UDPConn)
-		_, err := udpConn.WriteTo(c.writeBuffer.Bytes(), c.address)
-		c.writeBuffer.Reset()
+	if c.Transport == "udp" {
+		udpConn := c.Conn.(*net.UDPConn)
+		_, err := udpConn.WriteTo(c.WriteBuffer.Bytes(), c.Address)
+		c.WriteBuffer.Reset()
 		return err
 	}
 
-	_, err := c.conn.Write(c.writeBuffer.Bytes())
-	c.writeBuffer.Reset()
+	_, err := c.Conn.Write(c.WriteBuffer.Bytes())
+	c.WriteBuffer.Reset()
 
 	return err
 }
 
-// Transport returns the transport protocol the connection is using.
-// i.e. "tcp" or "udp".
-func (c *Conn) Transport() string {
-	return c.transport
-}
-
 // Addr returns the network address of the connected UA.
 func (c *Conn) Addr() net.Addr {
-	return c.address
+	return c.Address
 }
 
 // Close closes the connection.
 func (c *Conn) Close() error {
-	if c.closed {
+	if c.Closed {
 		return nil
 	}
 
-	c.closed = true
+	c.Closed = true
 
-	if c.transport == "udp" {
-		if c.listener != nil {
-			c.listener.udpPoolMutex.Lock()
-			delete(c.listener.udpPool, c.address.String())
-			c.listener.udpPoolMutex.Unlock()
+	if c.Transport == "udp" {
+		if c.Listener != nil {
+			c.Listener.udpPoolMutex.Lock()
+			delete(c.Listener.udpPool, c.Address.String())
+			c.Listener.udpPoolMutex.Unlock()
 		}
-		close(c.udpReceiver)
+		close(c.UdpReceiver)
 		return nil
 	}
 
-	return c.conn.Close()
+	return c.Conn.Close()
 }
 
 func (c *Conn) branchJanitor() {
 	for {
 		time.Sleep(time.Second * 10)
-		if c.closed {
+		if c.Closed {
 			return
 		}
 
-		c.branchMutex.Lock()
-		for branch, t := range c.receivedBranches {
+		c.BranchMutex.Lock()
+		for branch, t := range c.ReceivedBranches {
 			if time.Now().Sub(t) > 30*time.Second {
-				delete(c.receivedBranches, branch)
+				delete(c.ReceivedBranches, branch)
 			}
 		}
-		c.branchMutex.Unlock()
+		c.BranchMutex.Unlock()
 	}
 }
