@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"github.com/1lann/go-sip/sipnet"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/1lann/go-sip/sipnet"
 )
 
 // TODO: Place this in a configuration file

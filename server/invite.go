@@ -3,9 +3,10 @@ package server
 import (
 	"errors"
 	"fmt"
-	"github.com/1lann/go-sip/sipnet"
 	"sync"
 	"time"
+
+	"github.com/1lann/go-sip/sipnet"
 )
 
 var errGiveUp = errors.New("server: give up")
