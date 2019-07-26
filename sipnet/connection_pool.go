@@ -78,14 +78,18 @@ func (l *Listener) readRequests(conn *Conn) {
 func (l *Listener) udpJanitor() {
 	for {
 		time.Sleep(time.Second * 10)
+
+		var markClose []*Conn
 		l.udpPoolMutex.Lock()
-		for address, conn := range l.udpPool {
+		for _, conn := range l.udpPool {
 			if time.Now().Sub(conn.LastMessage) > time.Second*30 {
-				// Disconnect
-				conn.Close()
-				delete(l.udpPool, address)
+				markClose = append(markClose, conn)
 			}
 		}
 		l.udpPoolMutex.Unlock()
+
+		for _, conn := range markClose {
+			conn.Close()
+		}
 	}
 }
